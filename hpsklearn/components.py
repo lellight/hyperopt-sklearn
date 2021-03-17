@@ -21,10 +21,8 @@ try:
     import xgboost
 except ImportError:
     xgboost = None
-try:
-    import lightgbm
-except ImportError:
-    lightgbm = None
+    
+import lightgbm
 
 ##########################################
 ##==== Wrappers for sklearn modules ====##
@@ -89,13 +87,6 @@ def sklearn_ExtraTreesRegressor(*args, **kwargs):
 def sklearn_DecisionTreeClassifier(*args, **kwargs):
     return sklearn.tree.DecisionTreeClassifier(*args, **kwargs)
 
-@scope.define
-def sklearn_Lasso(*args, **kwargs):
-    return sklearn.linear_model.Lasso(*args, **kwargs)
-
-@scope.define
-def sklearn_ElasticNet(*args, **kwargs):
-    return sklearn.linear_model.ElasticNet(*args, **kwargs)
 
 @scope.define
 def sklearn_SGDClassifier(*args, **kwargs):
@@ -112,23 +103,22 @@ def sklearn_XGBClassifier(*args, **kwargs):
     return xgboost.XGBClassifier(*args, **kwargs)
 
 @scope.define
-def sklearn_XGBRegressor(*args, **kwargs):
-    if xgboost is None:
-        raise ImportError('No module named xgboost')
-    return xgboost.XGBRegressor(*args, **kwargs)
-
-@scope.define
-def sklearn_LGBMClassifier(*args, **kwargs):
+def lightgbm_classification(*args, **kwargs):
     if lightgbm is None:
         raise ImportError('No module named lightgbm')
     return lightgbm.LGBMClassifier(*args, **kwargs)
 
 @scope.define
-def sklearn_LGBMRegressor(*args, **kwargs):
+def lightgbm_regression(*args, **kwargs):
     if lightgbm is None:
         raise ImportError('No module named lightgbm')
     return lightgbm.LGBMRegressor(*args, **kwargs)
 
+@scope.define
+def sklearn_XGBRegressor(*args, **kwargs):
+    if xgboost is None:
+        raise ImportError('No module named xgboost')
+    return xgboost.XGBRegressor(*args, **kwargs)
 
 # @scope.define
 # def sklearn_Ridge(*args, **kwargs):
@@ -201,14 +191,6 @@ def sklearn_BernoulliRBM(*args, **kwargs):
 @scope.define
 def sklearn_ColumnKMeans(*args, **kwargs):
     return ColumnKMeans(*args, **kwargs)
-
-@scope.define
-def sklearn_GaussianRandomProjection(*args, **kwargs):
-    return sklearn.random_projection.GaussianRandomProjection(*args, **kwargs)
-
-@scope.define
-def sklearn_SparseRandomProjection(*args, **kwargs):
-    return sklearn.random_projection.SparseRandomProjection(*args, **kwargs)
 
 @scope.define
 def patience_param(x):
@@ -892,7 +874,8 @@ def _grad_boosting_hp_space(
     max_features=None,
     verbose=0,
     max_leaf_nodes=None,
-    warm_start=False):
+    warm_start=False,
+    presort='auto'):
     '''Generate GradientBoosting hyperparameters search space
     '''
     hp_space = dict(
@@ -913,6 +896,7 @@ def _grad_boosting_hp_space(
         max_features=(_trees_max_features(name_func('max_features'))
                    if max_features is None else max_features),
         warm_start=warm_start,
+        presort=presort
     )
     return hp_space
 
@@ -1016,6 +1000,7 @@ def decision_tree(name,
                   max_depth=None,
                   min_samples_split=None,
                   min_samples_leaf=None,
+                  presort=False,
                   random_state=None):
 
     def _name(msg):
@@ -1033,85 +1018,17 @@ def decision_tree(name,
             ['sqrt', 'log2',
              None]) if max_features is None else max_features,
         max_depth=max_depth,
-        min_samples_split=scope.int(hp.quniform(
+        min_samples_split=hp.quniform(
             _name('min_samples_split'),
-            2, 10, 1)) if min_samples_split is None else min_samples_split,
-        min_samples_leaf=scope.int(hp.quniform(
+            1, 10, 1) if min_samples_split is None else min_samples_split,
+        min_samples_leaf=hp.quniform(
             _name('min_samples_leaf'),
-            1, 5, 1)) if min_samples_leaf is None else min_samples_leaf,
+            1, 5, 1) if min_samples_leaf is None else min_samples_leaf,
+        presort=presort,
         random_state=_random_state(_name('rstate'), random_state),
         )
     return rval
 
-###############################
-##==== Lasso constructor ====##
-###############################
-def lasso(name,
-        alpha=None, # default - 1.0
-        fit_intercept=True, # default - True
-        normalize=False, # default - False
-        precompute=False, # default - False
-        max_iter=None,
-        tol=None,
-        positive=False,
-        selection=None, # default - 'cyclic'
-        ):
-
-    def _name(msg):
-        return '%s.%s_%s' % (name, 'lasso', msg)
-
-    rval = scope.sklearn_Lasso(
-        alpha=(_sgd_alpha(_name('alpha'))
-               if alpha is None else alpha),
-        fit_intercept=fit_intercept,
-        normalize=normalize,
-        precompute=precompute,
-        max_iter=(_svm_max_iter(_name('maxiter'))
-                  if max_iter is None else max_iter),
-        tol=_svm_tol(_name('tol')) if tol is None else tol,
-        positive=positive,
-        selection=hp.choice(_name('selection'), [
-            'cyclic',
-            'random',
-        ]) if selection is None else selection,
-    )
-    return rval
-
-####################################
-##==== ElasticNet constructor ====##
-####################################
-def elasticnet(name,
-        alpha=None, # default - 1.0
-        l1_ratio=None,
-        fit_intercept=True, # default - True
-        normalize=False, # default - False
-        precompute=False, # default - False
-        max_iter=None,
-        tol=None,
-        positive=False,
-        selection=None, # default - 'cyclic'
-        ):
-
-    def _name(msg):
-        return '%s.%s_%s' % (name, 'elasticnet', msg)
-
-    rval = scope.sklearn_ElasticNet(
-        alpha=_sgd_alpha(_name('alpha')) if alpha is None else alpha,
-        l1_ratio=(_sgd_l1_ratio(_name('l1ratio'))
-                  if l1_ratio is None else l1_ratio),
-        fit_intercept=fit_intercept,
-        normalize=normalize,
-        precompute=precompute,
-        max_iter=(_svm_max_iter(_name('maxiter'))
-                  if max_iter is None else max_iter),
-        tol=_svm_tol(_name('tol')) if tol is None else tol,
-        positive=positive,
-        selection=hp.choice(_name('selection'), [
-            'cyclic',
-            'random',
-        ]) if selection is None else selection,
-    )
-    return rval
 
 ###################################################
 ##==== SGD classifier/regressor constructors ====##
@@ -1122,8 +1039,7 @@ def sgd(name,
         alpha=None,  # default - 0.0001
         l1_ratio=None,  # default - 0.15, must be within [0, 1]
         fit_intercept=True,  # default - True
-        max_iter=None,
-        tol=None,
+        n_iter=5,  # default - 5
         shuffle=True,  # default - True
         random_state=None,  # default - None
         epsilon=None,
@@ -1155,9 +1071,7 @@ def sgd(name,
         l1_ratio=(_sgd_l1_ratio(_name('l1ratio'))
                   if l1_ratio is None else l1_ratio),
         fit_intercept=fit_intercept,
-        tol=_svm_tol(_name('tol')) if tol is None else tol,
-        max_iter=(_svm_max_iter(_name('maxiter'))
-                  if max_iter is None else max_iter),
+        n_iter=n_iter,
         learning_rate=(_sgdc_learning_rate(_name('learning_rate'))
                        if learning_rate is None else learning_rate),
         eta0=_sgd_eta0(_name('eta0')) if eta0 is None else eta0,
@@ -1177,8 +1091,7 @@ def sgd_regression(name,
                    alpha=None,  # default - 0.0001
                    l1_ratio=None,  # default - 0.15, must be within [0, 1]
                    fit_intercept=True,  # default - True
-                   tol=None,
-                   max_iter=None,
+                   n_iter=5,  # default - 5
                    shuffle=None,  # default - False
                    random_state=None,  # default - None
                    epsilon=None,  # default - 0.1
@@ -1203,9 +1116,7 @@ def sgd_regression(name,
         l1_ratio=(_sgd_l1_ratio(_name('l1ratio'))
                   if l1_ratio is None else l1_ratio),
         fit_intercept=fit_intercept,
-        tol=_svm_tol(_name('tol')) if tol is None else tol,
-        max_iter=(_svm_max_iter(_name('maxiter'))
-                  if max_iter is None else max_iter),
+        n_iter=n_iter,
         # For regression, use the SVM epsilon instead of the SGD one.
         epsilon=_svm_epsilon(_name('epsilon')) if epsilon is None else epsilon,
         learning_rate=(_sgdr_learning_rate(_name('learning_rate'))
@@ -1294,8 +1205,7 @@ def _xgboost_hp_space(
     reg_lambda=None,
     scale_pos_weight=1,
     base_score=0.5,
-    random_state=None,
-    n_jobs=-1):
+    random_state=None):
     '''Generate XGBoost hyperparameters search space
     '''
     hp_space = dict(
@@ -1322,10 +1232,91 @@ def _xgboost_hp_space(
                     if reg_lambda is None else reg_lambda),
         scale_pos_weight=scale_pos_weight,
         base_score=base_score,
-        seed=_random_state(name_func('rstate'), random_state=random_state),
-        n_jobs=n_jobs
+        seed=_random_state(name_func('rstate'), random_state)
     )
     return hp_space
+
+###################################################
+##==== XGBoost hyperparameters search space ====##
+###################################################
+
+def _lightgbm_max_depth(name):
+    return scope.int(hp.uniform(name, 1, 11))
+
+def _lightgbm_learning_rate(name):
+    return hp.loguniform(name, np.log(0.0001), np.log(0.5)) - 0.0001
+
+def _lightgbm_n_estimators(name):
+    return scope.int(hp.quniform(name, 100, 6000, 200))
+
+def _lightgbm_gamma(name):
+    return hp.loguniform(name, np.log(0.0001), np.log(5)) - 0.0001
+
+def _lightgbm_min_child_weight(name):
+    return scope.int(hp.loguniform(name, np.log(1), np.log(100)))
+
+def _lightgbm_subsample(name):
+    return hp.uniform(name, 0.5, 1)
+
+def _lightgbm_colsample_bytree(name):
+    return hp.uniform(name, 0.5, 1)
+
+def _lightgbm_colsample_bylevel(name):
+    return hp.uniform(name, 0.5, 1)
+
+def _lightgbm_reg_alpha(name):
+    return hp.loguniform(name, np.log(0.0001), np.log(1)) - 0.0001
+
+def _lightgbm_reg_lambda(name):
+    return hp.loguniform(name, np.log(1), np.log(4))
+
+def _lightgbm_hp_space(
+    name_func,
+    max_depth=None,
+    learning_rate=None,
+    n_estimators=None,
+    gamma=None,
+    min_child_weight=None,
+    max_delta_step=0,
+    subsample=None,
+    colsample_bytree=None,
+    colsample_bylevel=None,
+    reg_alpha=None,
+    reg_lambda=None,
+    scale_pos_weight=1,
+    base_score=0.5,
+    random_state=None):
+    '''Generate XGBoost hyperparameters search space
+    '''
+    hp_space = dict(
+        max_depth=(_lightgbm_max_depth(name_func('max_depth'))
+                   if max_depth is None else max_depth),
+        learning_rate=(_lightgbm_learning_rate(name_func('learning_rate'))
+                       if learning_rate is None else learning_rate),
+        n_estimators=(_lightgbm_n_estimators(name_func('n_estimators'))
+                      if n_estimators is None else n_estimators),
+        gamma=(_lightgbm_gamma(name_func('gamma'))
+               if gamma is None else gamma),
+        min_child_weight=(_lightgbm_min_child_weight(name_func('min_child_weight'))
+                          if min_child_weight is None else min_child_weight),
+        max_delta_step=max_delta_step,
+        subsample=(_lightgbm_subsample(name_func('subsample'))
+                   if subsample is None else subsample),
+        colsample_bytree=(_lightgbm_colsample_bytree(name_func('colsample_bytree'))
+                          if colsample_bytree is None else colsample_bytree),
+        colsample_bylevel=(_lightgbm_colsample_bylevel(name_func('colsample_bylevel'))
+                          if colsample_bylevel is None else colsample_bylevel),
+        reg_alpha=(_lightgbm_reg_alpha(name_func('reg_alpha'))
+                   if reg_alpha is None else reg_alpha),
+        reg_lambda=(_lightgbm_reg_lambda(name_func('reg_lambda'))
+                    if reg_lambda is None else reg_lambda),
+        scale_pos_weight=scale_pos_weight,
+        base_score=base_score,
+        seed=_random_state(name_func('rstate'), random_state)
+    )
+    return hp_space
+
+
 
 ########################################################
 ##==== XGBoost classifier/regressor constructors ====##
@@ -1372,127 +1363,50 @@ def xgboost_regression(name, objective='reg:linear', **kwargs):
     hp_space['objective'] = objective
     return scope.sklearn_XGBRegressor(**hp_space)
 
-
-###################################################
-##==== LightGBM hyperparameters search space ====##
-###################################################
-
-def _lightgbm_max_depth(name):
-    return scope.int(hp.uniform(name, 1, 11))
-
-def _lightgbm_num_leaves(name):
-    return scope.int(hp.uniform(name, 2, 121))
-
-def _lightgbm_learning_rate(name):
-    return hp.loguniform(name, np.log(0.0001), np.log(0.5)) - 0.0001
-
-def _lightgbm_n_estimators(name):
-    return scope.int(hp.quniform(name, 100, 6000, 200))
-
-def _lightgbm_gamma(name):
-    return hp.loguniform(name, np.log(0.0001), np.log(5)) - 0.0001
-
-def _lightgbm_min_child_weight(name):
-    return scope.int(hp.loguniform(name, np.log(1), np.log(100)))
-
-def _lightgbm_subsample(name):
-    return hp.uniform(name, 0.5, 1)
-
-def _lightgbm_colsample_bytree(name):
-    return hp.uniform(name, 0.5, 1)
-
-def _lightgbm_colsample_bylevel(name):
-    return hp.uniform(name, 0.5, 1)
-
-def _lightgbm_reg_alpha(name):
-    return hp.loguniform(name, np.log(0.0001), np.log(1)) - 0.0001
-
-def _lightgbm_reg_lambda(name):
-    return hp.loguniform(name, np.log(1), np.log(4))
-
-def _lightgbm_boosting_type(name):
-    return hp.choice(name, ['gbdt', 'dart', 'goss'])
-
-def _lightgbm_hp_space(
-    name_func,
-    max_depth=None,
-    num_leaves=None,
-    learning_rate=None,
-    n_estimators=None,
-    min_child_weight=None,
-    max_delta_step=0,
-    subsample=None,
-    colsample_bytree=None,
-    reg_alpha=None,
-    reg_lambda=None,
-    boosting_type=None,
-    scale_pos_weight=1,
-    random_state=None):
-    '''Generate LightGBM hyperparameters search space
-    '''
-    hp_space = dict(
-        max_depth=(_lightgbm_max_depth(name_func('max_depth'))
-                   if max_depth is None else max_depth),
-        num_leaves=(_lightgbm_num_leaves(name_func('num_leaves'))
-                    if num_leaves is None else num_leaves),
-        learning_rate=(_lightgbm_learning_rate(name_func('learning_rate'))
-                       if learning_rate is None else learning_rate),
-        n_estimators=(_lightgbm_n_estimators(name_func('n_estimators'))
-                      if n_estimators is None else n_estimators),
-        min_child_weight=(_lightgbm_min_child_weight(name_func('min_child_weight'))
-                          if min_child_weight is None else min_child_weight),
-        max_delta_step=max_delta_step,
-        subsample=(_lightgbm_subsample(name_func('subsample'))
-                   if subsample is None else subsample),
-        colsample_bytree=(_lightgbm_colsample_bytree(name_func('colsample_bytree'))
-                          if colsample_bytree is None else colsample_bytree),
-        reg_alpha=(_lightgbm_reg_alpha(name_func('reg_alpha'))
-                   if reg_alpha is None else reg_alpha),
-        reg_lambda=(_lightgbm_reg_lambda(name_func('reg_lambda'))
-                    if reg_lambda is None else reg_lambda),
-        boosting_type=(_lightgbm_boosting_type(name_func('boosting_type'))
-                    if boosting_type is None else boosting_type),
-        scale_pos_weight=scale_pos_weight,
-        seed=_random_state(name_func('rstate'), random_state)
-    )
-    return hp_space
-
 ########################################################
 ##==== LightGBM classifier/regressor constructors ====##
 ########################################################
-def lightgbm_classification(name, objective='binary', **kwargs):
+def lightgbm_classification(name, objective='binary:logistic', **kwargs):
     '''
     Return a pyll graph with hyperparameters that will construct
     a lightgbm.LGBMClassifier model.
 
     Args:
-        objective([str]): choose from ['binary', 'multiclass']
+        objective([str]): choose from ['binary:logistic', 'binary:logitraw']
             or provide an hp.choice pyll node
 
-    See help(hpsklearn.components._lightgbm_hp_space) for info on
-    additional available LightGBM arguments.
+    See help(hpsklearn.components._xgboost_hp_space) for info on
+    additional available XGBoost arguments.
     '''
     def _name(msg):
         return '%s.%s_%s' % (name, 'lightgbm', msg)
 
     hp_space = _lightgbm_hp_space(_name, **kwargs)
     hp_space['objective'] = objective
-    return scope.sklearn_LGBMClassifier(**hp_space)
+    return scope.lightgbm_classification(**hp_space)
 
 
-def lightgbm_regression(name, **kwargs):
-    '''
-    Return a pyll graph with hyperparameters that will construct
-    a lightgbm.LightGBMRegressor model.
-    
-    See help(hpsklearn.components._lightgbm_hp_space) for info on
-    additional available LightGBM arguments.
-    '''
-    def _name(msg):
-        return '%s.%s_%s' % (name, 'lightgbm_reg', msg)
+# def lightgbm_regression(name, objective='reg:linear', **kwargs):
+#     '''
+#     Return a pyll graph with hyperparameters that will construct
+#     a lightgbm.LGBMRegressor model.
 
-    hp_space = _lightgbm_hp_space(_name, **kwargs)
-    return scope.sklearn_LGBMRegressor(objective='regression', **hp_space)
+#     Args:
+#         objective([str]): choose from [
+#                 'reg:linear',
+#                 'count:poisson'
+#             ]
+#             or provide an hp.choice pyll node
+
+#     See help(hpsklearn.components._xgboost_hp_space) for info on
+#     additional available XGBoost arguments.
+#     '''
+#     def _name(msg):
+#         return '%s.%s_%s' % (name, 'xgboost_reg', msg)
+
+#     hp_space = _xgboost_hp_space(_name, **kwargs)
+#     hp_space['objective'] = objective
+#     return scope.lightgbm_classification(**hp_space)
 
 
 #################################################
@@ -1518,7 +1432,7 @@ def multinomial_nb(name,
 
 def gaussian_nb(name):
     def _name(msg):
-      return '%s.%s_%s' % (name, 'gaussian_nb', msg)
+        return '%s.%s_%s' % (name, 'gaussian_nb', msg)
 
     rval = scope.sklearn_GaussianNB()
     return rval
@@ -1531,8 +1445,7 @@ def passive_aggressive(name,
     loss=None,
     C=None,
     fit_intercept=False,
-    tol=None,
-    max_iter=None,                   
+    n_iter=None,
     n_jobs=1,
     shuffle=True,
     random_state=None,
@@ -1551,9 +1464,13 @@ def passive_aggressive(name,
             np.log(10),
             ) if C is None else C,
         fit_intercept=fit_intercept,
-        tol=_svm_tol(_name('tol')) if tol is None else tol,
-        max_iter=(_svm_max_iter(_name('maxiter'))
-                  if max_iter is None else max_iter),
+        n_iter=scope.int(
+            hp.qloguniform(
+                _name('n_iter'),
+                np.log(1),
+                np.log(1000),
+                q=1,
+                )) if n_iter is None else n_iter,
         n_jobs=n_jobs,
         random_state=_random_state(_name('rstate'), random_state),
         verbose=verbose
@@ -1919,53 +1836,9 @@ def colkmeans(name,
     )
     return rval
 
-def gaussian_random_projection(name,
-                             n_components=None,
-                             eps=None,
-                             random_state=None):
-    def _name(msg):
-        return '%s.%s_%s' % (name, 'gaussian_random_projection', msg)
+# XXX: todo GaussianRandomProjection
+# XXX: todo SparseRandomProjection
 
-    if eps is None and n_components=='auto':
-        eps = hp.loguniform(_name('eps'), np.log(1e-7), np.log(1))
-
-    rval = scope.sklearn_GaussianRandomProjection(
-        n_components=scope.int(
-            hp.qloguniform(
-                _name('n_components'),
-                low=np.log(0.51),
-                high=np.log(999.5),
-                q=1.0)) if n_components is None else n_components,
-        eps=eps,
-        random_state=random_state,
-    )
-    return rval
-
-def sparse_random_projection(name,
-                           n_components=None,
-                           density=None,
-                           eps=None,
-                           dense_output=None,
-                           random_state=None):
-    def _name(msg):
-        return '%s.%s_%s' % (name, 'sparse_random_projection', msg)
-
-    if eps is None and n_components=='auto':
-        eps = hp.loguniform(_name('eps'), np.log(1e-7), np.log(1))
-
-    rval = scope.sklearn_SparseRandomProjection(
-        n_components=scope.int(
-            hp.qloguniform(
-                _name('n_components'),
-                low=np.log(0.51),
-                high=np.log(999.5),
-                q=1.0)) if n_components is None else n_components,
-        density=hp.uniform(_name('density'), 1e-6, 1) if density is None else density,
-        eps=eps,
-        dense_output=dense_output,
-        random_state=random_state,
-    )
-    return rval
 
 ####################################
 ##==== Preprocessor selectors ====##
